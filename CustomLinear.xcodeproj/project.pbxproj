@@ -11,6 +11,9 @@
 		F24818232BEE81CC00E80D98 /* CustomLinear.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F24818182BEE81CB00E80D98 /* CustomLinear.framework */; };
 		F24818282BEE81CC00E80D98 /* CustomLinearTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F24818272BEE81CC00E80D98 /* CustomLinearTests.swift */; };
 		F24818292BEE81CC00E80D98 /* CustomLinear.h in Headers */ = {isa = PBXBuildFile; fileRef = F248181B2BEE81CB00E80D98 /* CustomLinear.h */; settings = {ATTRIBUTES = (Public, ); }; };
+		F24818352BEE8C7E00E80D98 /* ATenQuantizedLinear.mm in Sources */ = {isa = PBXBuildFile; fileRef = F24818342BEE8C7E00E80D98 /* ATenQuantizedLinear.mm */; };
+		F24818372BEEBFFF00E80D98 /* LlamaCppInt8Linear.mm in Sources */ = {isa = PBXBuildFile; fileRef = F24818362BEEBFFF00E80D98 /* LlamaCppInt8Linear.mm */; };
+		F24818492BF3182300E80D98 /* LlamaCppInt8Linear.metal in Sources */ = {isa = PBXBuildFile; fileRef = F24818482BF3182300E80D98 /* LlamaCppInt8Linear.metal */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -29,6 +32,9 @@
 		F248181C2BEE81CB00E80D98 /* CustomLinear.docc */ = {isa = PBXFileReference; lastKnownFileType = folder.documentationcatalog; path = CustomLinear.docc; sourceTree = "<group>"; };
 		F24818222BEE81CC00E80D98 /* CustomLinearTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = CustomLinearTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		F24818272BEE81CC00E80D98 /* CustomLinearTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CustomLinearTests.swift; sourceTree = "<group>"; };
+		F24818342BEE8C7E00E80D98 /* ATenQuantizedLinear.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = ATenQuantizedLinear.mm; sourceTree = "<group>"; };
+		F24818362BEEBFFF00E80D98 /* LlamaCppInt8Linear.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = LlamaCppInt8Linear.mm; sourceTree = "<group>"; };
+		F24818482BF3182300E80D98 /* LlamaCppInt8Linear.metal */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.metal; path = LlamaCppInt8Linear.metal; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -73,6 +79,9 @@
 			children = (
 				F248181B2BEE81CB00E80D98 /* CustomLinear.h */,
 				F248181C2BEE81CB00E80D98 /* CustomLinear.docc */,
+				F24818342BEE8C7E00E80D98 /* ATenQuantizedLinear.mm */,
+				F24818362BEEBFFF00E80D98 /* LlamaCppInt8Linear.mm */,
+				F24818482BF3182300E80D98 /* LlamaCppInt8Linear.metal */,
 			);
 			path = CustomLinear;
 			sourceTree = "<group>";
@@ -195,6 +204,9 @@
 			buildActionMask = 2147483647;
 			files = (
 				F248181D2BEE81CB00E80D98 /* CustomLinear.docc in Sources */,
+				F24818492BF3182300E80D98 /* LlamaCppInt8Linear.metal in Sources */,
+				F24818352BEE8C7E00E80D98 /* ATenQuantizedLinear.mm in Sources */,
+				F24818372BEEBFFF00E80D98 /* LlamaCppInt8Linear.mm in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
