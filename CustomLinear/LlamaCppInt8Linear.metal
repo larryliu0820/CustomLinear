@@ -29,7 +29,7 @@ void dequantize_q8_0(constant char *weight, constant float *scales, thread type4
 
 // 2 x 4096 @ 1024 x 4096 * 1024 -> x.transpose(weight) * scales -> A.transpose(B) * scales
 // M x K @ N x K -> M x N
-[[host_name("int8pack_mm_float")]]
+[[host_name("mengwei_mm")]]
 kernel void int8pack_mm(
     constant float             * A              [[buffer(0)]],  // 2 x 4096
     constant char              * B              [[buffer(1)]],  // 1024 x 4096
@@ -88,7 +88,7 @@ kernel void int8pack_mm(
     // Need to use these N times to calculate 1 block of result BLOCK_SIZE_M x BLOCK_SIZE_N
     simdgroup_half8x8 ma[4];
     simdgroup_float8x8 mb[2];
-    simdgroup_float8x8 c_res[4];
+    simdgroup_float8x8 c_res[8];
     for (int i = 0; i < 8; i++){
         c_res[i] = make_filled_simdgroup_matrix<float, 8>(0.f);
     }
@@ -110,8 +110,9 @@ kernel void int8pack_mm(
         // BLOCK_SIZE_K / THREAD_PER_COL = 16
         half4x4 temp_a;
         
-        // FIX: scales need to have an index
-        dequantize_q8_0(y, scales, temp_a);
+        // find the scale index
+        int scale_index = r1 * BLOCK_SIZE_N + thread_col;
+        dequantize_q8_0(y, scales + scale_index, temp_a);
         threadgroup_barrier(mem_flags::mem_threadgroup);
 
         // doing a transpose. Currently the weight block is BLOCK_SIZE_N x BLOCK_SIZE_K (64 x 32) we need to map that
@@ -129,7 +130,7 @@ kernel void int8pack_mm(
             int row_offset = i & 7;
             int col_offset = (tiitg / THREAD_PER_COL) % 8;
             // now calculates the overall offset for sa
-            int sa_offset = (sg_mat_grid_row_index * 8 + row_offset) * 64 + (sg_mat_grid_col_index * 8 + col_offset);
+            int sa_offset = (sg_mat_grid_row_index * 8 + sg_mat_grid_col_index) * 64 + (row_offset * 8 + col_offset);
             // write data
             *(sa + sa_offset) = temp_a[i/4][i%4];
         }
@@ -137,13 +138,13 @@ kernel void int8pack_mm(
         int sb_offset = tiitg * (BLOCK_SIZE_K / THREAD_PER_ROW);
         *((threadgroup float2x4 *) sb + sb_offset) = *((constant float2x4 *)x);
 
-        y += BLOCK_SIZE_K;
+        y += BLOCK_SIZE_K; // why?
         x += BLOCK_SIZE_K;
 
         threadgroup_barrier(mem_flags::mem_threadgroup);
 
         // at this point all the 128 threads should finished storing data into shared memory.
-        // load matrices from shared memory and conduct matrix multiplication.
+        // load matrices from shared memory and conduct outer product form of matrix multiplication.
         // we start to use SG_MAT_SIZE and THREAD_MAT_M etc.
         //
         // 2 simdgroup in a threadgroup.
@@ -155,7 +156,7 @@ kernel void int8pack_mm(
         for (int ik = 0; ik < BLOCK_SIZE_K / 8; ik++) {
             #pragma unroll(4)
             for (int i = 0; i < 4; i++) {
-                // load 4 sg mat into ma. This needs to be 2x2 so that 1x2 can multiply 2x2
+                // load 4 sg mat into ma.
                 int a_offset = SG_MAT_SIZE * i;
                 simdgroup_load(ma[i], lsma + a_offset);
             }
@@ -166,7 +167,7 @@ kernel void int8pack_mm(
                 int b_offset = SG_MAT_SIZE * i;
                 simdgroup_load(mb[i], lsmb + b_offset);
             }
-            
+            // should be stepping THREAD_MAT_N * SG_MAT_SIZE * 2. It's just happens to be the same as BLOCK_SIZE_N / SG_MAT_ROW * SG_MAT_SIZE
             int step_N = BLOCK_SIZE_N / SG_MAT_ROW * SG_MAT_SIZE;
             int step_M = BLOCK_SIZE_M / SG_MAT_ROW * SG_MAT_SIZE;
             
@@ -180,9 +181,9 @@ kernel void int8pack_mm(
         }
     }
 
-    if ((r0 + 1) * BLOCK_SIZE_M <= ne0 && (r1 + 1) * BLOCK_SIZE_N <= ne1) {
-        device float * C = outputData + (BLOCK_SIZE_M * r0 + 32 * (sgitg &  1)) \
-                                      + (BLOCK_SIZE_N * r1 + 16 * (sgitg >> 1)) * ne0
+    if ((r0 + 1) * BLOCK_SIZE_N <= ne0 && (r1 + 1) * BLOCK_SIZE_M <= ne1) {
+        device float * C = outputData + (BLOCK_SIZE_N * r0 + 32 * (sgitg &  1)) \
+                                      + (BLOCK_SIZE_M * r1 + 16 * (sgitg >> 1)) * ne0
                                       + ne1*ne0;
         for (int i = 0; i < 8; i++) {
             simdgroup_store(c_res[i], C + 8 * (i%4) + 8 * ne0 * (i/4), ne0);
@@ -191,18 +192,18 @@ kernel void int8pack_mm(
         // block is smaller than 64x32, we should avoid writing data outside of the matrix
         threadgroup_barrier(mem_flags::mem_threadgroup);
         threadgroup float * temp_str = ((threadgroup float *)shared_memory) \
-                                      + 32 * (sgitg&1) + (16 * (sgitg>>1)) * BLOCK_SIZE_M;
+                                      + 32 * (sgitg&1) + (16 * (sgitg>>1)) * BLOCK_SIZE_N;
         for (int i = 0; i < 8; i++) {
-            simdgroup_store(c_res[i], temp_str + 8 * (i%4) + 8 * BLOCK_SIZE_M * (i/4), BLOCK_SIZE_M);
+            simdgroup_store(c_res[i], temp_str + 8 * (i%4) + 8 * BLOCK_SIZE_N * (i/4), BLOCK_SIZE_N);
         }
 
         threadgroup_barrier(mem_flags::mem_threadgroup);
 
-        device float * C = outputData + (BLOCK_SIZE_M * r0) + (BLOCK_SIZE_N * r1) * ne0 + ne1*ne0;
+        device float * C = outputData + (BLOCK_SIZE_N * r0) + (BLOCK_SIZE_M * r1) * ne0 + ne1*ne0;
         if (sgitg == 0) {
             for (int i = 0; i < n_rows; i++) {
-                for (int j = tiitg; j < n_cols; j += BLOCK_SIZE_N) {
-                    *(C + i + j * ne0) = *(temp_str + i + j * BLOCK_SIZE_M);
+                for (int j = tiitg; j < n_cols; j += BLOCK_SIZE_M) {
+                    *(C + i + j * ne0) = *(temp_str + i + j * BLOCK_SIZE_N);
                 }
             }
         }

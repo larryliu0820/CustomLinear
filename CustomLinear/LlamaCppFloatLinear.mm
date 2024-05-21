@@ -105,7 +105,8 @@ void kernel_mul_mm_impl(device const  uchar * src0,
         + nb12 * im
         + nb11 * (r1 * BLOCK_SIZE_N + thread_col)
         + nb10 * (BLOCK_SIZE_K / THREAD_PER_COL * (tiitg % THREAD_PER_COL)));
-
+    device float4x4 * temp_y = (device float4x4 *)y;
+    device float4x4 * temp_x = (device float4x4 *)x;
     for (int loop_k = 0; loop_k < ne00; loop_k += BLOCK_SIZE_K) {
         // load data and store to threadgroup memory
         half4x4 temp_a;
@@ -114,9 +115,17 @@ void kernel_mul_mm_impl(device const  uchar * src0,
 
         #pragma unroll(16)
         for (int i = 0; i < 16; i++) {
-            *(sa + SG_MAT_SIZE * ((tiitg / THREAD_PER_ROW / 8) \
-            +                     (tiitg % THREAD_PER_ROW) * 16 + (i / 8) * 8) \
-            +                     (tiitg / THREAD_PER_ROW) % 8  + (i & 7) * 8) = temp_a[i/4][i%4];
+            // for example, tiitg 32, i 12 -> 0 + 1 = 1, it needs to work on sg mat grid row 1
+            int sg_mat_grid_row_index = (tiitg % THREAD_PER_ROW) * THREAD_PER_ROW + i / 8;
+            // same example, sg mat grid col index: 32 / 2 / 8 = 2, so currently need to work with sg mat at (1, 2)
+            int sg_mat_grid_col_index = tiitg / THREAD_PER_ROW / 8;
+            // now inside sg mat, which index to write to? starting point is SG_MAT_SIZE * sg_mat_offset
+            int row_offset = i & 7;
+            int col_offset = (tiitg / THREAD_PER_ROW) % 8;
+            // now calculates the overall offset for sa
+            int sa_offset = (sg_mat_grid_row_index * 8 + sg_mat_grid_col_index) * 64 + (row_offset * 8 + col_offset);
+            half temp_a_val = temp_a[i/4][i%4];
+            *(sa + sa_offset) = temp_a[i/4][i%4];
         }
 
         *(threadgroup float2x4 *)(sb + (tiitg % THREAD_PER_COL) * 8 * 32 + 8 * (tiitg / THREAD_PER_COL)) = *((device float2x4 *)y);
@@ -130,7 +139,8 @@ void kernel_mul_mm_impl(device const  uchar * src0,
         // load matrices from threadgroup memory and conduct outer products
         threadgroup half  * lsma = (sa + THREAD_MAT_M * SG_MAT_SIZE * (sgitg % 2));
         threadgroup float * lsmb = (sb + THREAD_MAT_N * SG_MAT_SIZE * (sgitg / 2));
-
+        threadgroup half4x4 * temp_lsma = (threadgroup half4x4 *)lsma;
+        threadgroup float4x4 * temp_lsmb = (threadgroup float4x4 *)lsmb;
         #pragma unroll(4)
         for (int ik = 0; ik < BLOCK_SIZE_K / 8; ik++) {
             #pragma unroll(4)
@@ -158,6 +168,7 @@ void kernel_mul_mm_impl(device const  uchar * src0,
                                + (BLOCK_SIZE_N * r1 + 16 * (sgitg >> 1)) * ne0 + im*ne1*ne0;
         for (int i = 0; i < 8; i++) {
             simdgroup_store(c_res[i], C + 8 * (i%4) + 8 * ne0 * (i/4), ne0);
+            device float4x4 * temp_C = (device float4x4 *) (C + 8 * (i%4) + 8 * ne0 * (i/4));
         }
     } else {
         // block is smaller than 64x32, we should avoid writing data outside of the matrix
@@ -175,6 +186,7 @@ void kernel_mul_mm_impl(device const  uchar * src0,
             for (int i = 0; i < n_rows; i++) {
                 for (int j = tiitg; j < n_cols; j += BLOCK_SIZE_N) {
                     *(C + i + j * ne0) = *(temp_str + i + j * BLOCK_SIZE_M);
+                    device float4x4 * temp_C = (device float4x4 *) (C + i + j * ne0);
                 }
             }
         }
@@ -185,8 +197,8 @@ template<typename block_q, short nl, void (*dequantize_func)(device const block_
 kernel void kernel_mul_mm(
     device const float         * A              [[buffer(0)]],  // 2 x 4096
     device const float         * B              [[buffer(1)]],  // 1024 x 4096
-    device float               * outputData     [[buffer(3)]],  // 2 x 1024
-    constant uint3             & sizes          [[buffer(4)]],
+    device float               * outputData     [[buffer(2)]],  // 2 x 1024
+    constant uint3             & sizes          [[buffer(3)]],
     threadgroup uchar          * shared_memory  [[threadgroup(0)]], // threadgroup buffer at index 0
     uint3                        tgpig          [[threadgroup_position_in_grid]], // 3d coordinates
     uint                         tiitg          [[thread_index_in_threadgroup]], // 128 per threadgroup
@@ -196,16 +208,16 @@ kernel void kernel_mul_mm(
     // ggml: K x N @ K x M -> N x M
     uint32_t ne00 = sizes.y; // K
     uint32_t ne01 = sizes.z; // N
-    uint32_t nb00 = sizeof(float);
-    uint32_t nb01 = nb00 * ne00;
+    uint32_t nb00 = sizeof(block_q);
+    uint32_t nb01 = nb00 * ne00 / (nl * 16);
     uint32_t nb02 = nb01 * ne01;
     uint32_t ne10 = sizes.y; // K
     uint32_t ne11 = sizes.x; // M
     uint32_t nb10 = sizeof(float);
     uint32_t nb11 = nb10 * ne10;
     uint32_t nb12 = nb11 * ne11;
-    uint32_t ne0 = sizes.x; // M
-    uint32_t ne1 = sizes.z; // N
+    uint32_t ne0 = sizes.z; // N
+    uint32_t ne1 = sizes.x; // M
     kernel_mul_mm_impl<block_q, nl, dequantize_func>(
         (device uchar*) B,
         (device uchar*) A,
@@ -235,22 +247,26 @@ kernel mat_mm_t kernel_mul_mm<float4x4,      1,     dequantize_f32>;
     
 )METAL_QUANTIZED";
 
-Tensor _llama_cpp_mm_int8(const Tensor& A, const Tensor& B, const Tensor& scales) {
-    auto M = A.size(0);
-    auto N = B.size(0);
-    auto K = A.size(1);
+Tensor _llama_cpp_mm_mps(const Tensor& A, const Tensor& B) {
+  auto M = A.size(0);
+  auto N = B.size(0);
+  auto K = A.size(1);
 
-    TORCH_CHECK(A.dtype() == kBFloat16 || A.dtype() == kHalf || A.dtype() == kFloat,
-                __func__,
-                " : expect A to be either 32-bit or 16-bit float tensor.");
-    TORCH_CHECK(A.is_contiguous(), __func__, " : expect A to be contiguous.");
-    TORCH_CHECK(A.dim() == 2, __func__, " : expect A to be 2D tensor.");
+//   TORCH_CHECK(A.dtype() == kFloat,
+//               __func__,
+//               " : expect A to be either 32-bit float tensor.");
+  TORCH_CHECK(A.is_contiguous(), __func__, " : expect A to be contiguous.");
+  TORCH_CHECK(A.dim() == 2, __func__, " : expect A to be 2D tensor.");
 
-    TORCH_CHECK(B.dtype() == kChar, __func__, " : expect B to be int8 tensor.");
-    TORCH_CHECK(B.is_contiguous(), __func__, " : expect B to be contiguous.");
-    TORCH_CHECK(B.size(1) == K, __func__, " : expect B.size(1) == ", K);
+//   TORCH_CHECK(B.dtype() == kChar, __func__, " : expect B to be int8 tensor.");
+  TORCH_CHECK(B.is_contiguous(), __func__, " : expect B to be contiguous.");
+  TORCH_CHECK(B.size(1) == K, __func__, " : expect B.size(1) == ", K);
 
   auto C = at::empty({M, N}, A.options());
+  // reshape A
+  auto reshapedA = A.reshape({K, M});
+  // transpose B
+  auto transposedB = B.transpose(1, 0).contiguous().reshape({K, N});
   MPSStream* mpsStream = getCurrentMPSStream();
   std::array<uint32_t, 3> sizes = {static_cast<uint32_t>(M), static_cast<uint32_t>(K), static_cast<uint32_t>(N)};
   dispatch_sync_with_rethrow(mpsStream->queue(), ^() {
@@ -280,9 +296,8 @@ Tensor _llama_cpp_mm_int8(const Tensor& A, const Tensor& B, const Tensor& scales
       [computeEncoder setComputePipelineState:quantizedPSO];
       mtl_setBuffer(computeEncoder, A, 0);
       mtl_setBuffer(computeEncoder, B, 1);
-      mtl_setBuffer(computeEncoder, scales, 2);
-      mtl_setBuffer(computeEncoder, C, 3);
-      [computeEncoder setBytes:sizes.data() length:16 atIndex:4];
+      mtl_setBuffer(computeEncoder, C, 2);
+      [computeEncoder setBytes:sizes.data() length:16 atIndex:3];
         [computeEncoder setThreadgroupMemoryLength:8192 atIndex:0];
         [computeEncoder dispatchThreadgroups:MTLSizeMake( (M + 31)/32, (N + 63)/64, 1) threadsPerThreadgroup:MTLSizeMake(128, 1, 1)];
         mpsStream->synchronize(SyncType::COMMIT_AND_WAIT);
