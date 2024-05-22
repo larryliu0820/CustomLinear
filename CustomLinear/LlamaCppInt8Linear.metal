@@ -102,7 +102,8 @@ kernel void int8pack_mm(
         + nb11 * (r1 * BLOCK_SIZE_N + thread_col)
         + nb10 * (BLOCK_SIZE_K / THREAD_PER_COL * (tiitg % THREAD_PER_COL));
 
-    for (uint loop_k = 0; loop_k < ne01; loop_k += BLOCK_SIZE_K) { // BLOCK_SIZE_K = 32
+    for (uint loop_k = 0; loop_k < ne01; loop_k += BLOCK_SIZE_K) { 
+        // BLOCK_SIZE_K = 32
         // load data and store to threadgroup memory. Now we've partitioned weight to be BLOCK_SIZE_N x BLOCK_SIZE_K
         // Input to be BLOCK_SIZE_M x BLOCK_SIZE_K, need to fill them both into shared memory.
         //
