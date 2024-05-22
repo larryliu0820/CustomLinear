@@ -16,6 +16,7 @@ import torch.utils.cpp_extension
 compiled_lib = torch.utils.cpp_extension.load(
     name='LlamaCppFloatLinear',
     sources=['LlamaCppFloatLinear.mm'],
+    extra_include_paths=[os.path.dirname(__file__)],
     extra_cflags=['-std=c++17', "-g", "-D_CAPTURE_KERNEL=1", "-DDEBUG=1"],
     verbose=True,
    )
@@ -33,6 +34,6 @@ if __name__ == "__main__":
     print(res2)
 
     print("Metal kernel result: ")
-    print(res1.detach())
+    print(res1)
 
     print(f"Allclose? {torch.allclose(res1, res2, atol=0.1)}")
