@@ -29,22 +29,21 @@ template <> struct BlockType<half> {
 
 
 template<typename T>
-void dequantize_f32(constant float4x4 * src, constant T * scales, uint index, thread half4x4 & reg) {
-    float4x4 temp = *(((constant float4x4 *)src));
+void dequantize_f32(constant float * src, constant T * scales, uint index, thread half4x4 & reg) {
+//    float4x4 temp = *(((constant float4x4 *)src));
     for (int i = 0; i < 16; i++){
-        reg[i/4][i%4] = temp[i/4][i%4];
+        reg[i/4][i%4] = src[i];
     }
 }
 
 template<typename T>
-void dequantize_f16(constant half4x4 * src, constant T * scales, uint index, thread half4x4 & reg) {
-    float4x4 temp = *(((constant float4x4 *)src));
+void dequantize_f16(constant half * src, constant T * scales, uint index, thread half4x4 & reg) {
+//    float4x4 temp = *(((constant float4x4 *)src));
     for (int i = 0; i < 16; i++){
-        reg[i/4][i%4] = temp[i/4][i%4];
+        reg[i/4][i%4] = src[i];
     }
 }
 
-/**
 template<typename T>
 void dequantize_i8(constant char * src, constant T * scales, uint index, thread half4x4 & reg) {
     T scale = scales[index];
@@ -52,7 +51,6 @@ void dequantize_i8(constant char * src, constant T * scales, uint index, thread 
         reg[i/4][i%4] = src[i] * scale;
     }
 }
-*/
 
 #define BLOCK_SIZE_M 64 // 8 simdgroup matrices from matrix A
 #define BLOCK_SIZE_N 32 // 4 simdgroup matrices from matrix B
@@ -65,7 +63,7 @@ void dequantize_i8(constant char * src, constant T * scales, uint index, thread 
 #define SG_MAT_ROW 8
 
 // T: input type, W: weight type
-template<typename T, typename block_q, void (*dequantize_func)(constant block_q *, constant T *, uint, thread half4x4 &)>
+template<typename T, typename W, void (*dequantize_func)(constant W *, constant T *, uint, thread half4x4 &)>
 kernel void kernel_mul_mm(
     constant T                 * A              [[buffer(0)]],  // 2 x 4096
     constant char              * B              [[buffer(1)]],  // 1024 x 4096
@@ -85,8 +83,8 @@ kernel void kernel_mul_mm(
     // ggml: K x N @ K x M -> N x M
     uint32_t ne00 = sizes.y; // K
     uint32_t ne01 = sizes.z; // N
-    uint32_t nb00 = sizeof(block_q);
-    uint32_t nb01 = nb00 * ne00 / 16;
+    uint32_t nb00 = sizeof(W);
+    uint32_t nb01 = nb00 * ne00;
     uint32_t nb02 = nb01 * ne01;
     uint32_t ne10 = sizes.y; // K
     uint32_t ne11 = sizes.x; // M
@@ -119,15 +117,15 @@ kernel void kernel_mul_mm(
         c_res[i] = make_filled_simdgroup_matrix<T, 8>(0.f);
     }
 
-    constant block_q * x = (constant block_q *)(src0
-        + nb01 * (r0 * BLOCK_SIZE_M + thread_row))
-        + (tiitg % THREAD_PER_ROW);
-    constant T       * y = (constant T       *)(src1
+    constant W * x = (constant W *)(src0
+        + nb01 * (r0 * BLOCK_SIZE_M + thread_row)
+        + nb00 * (BLOCK_SIZE_K / THREAD_PER_ROW * (tiitg % THREAD_PER_ROW)));
+    constant T * y = (constant T *)(src1
         + nb11 * (r1 * BLOCK_SIZE_N + thread_col)
         + nb10 * (BLOCK_SIZE_K / THREAD_PER_COL * (tiitg % THREAD_PER_COL)));
     // DEBUG:
     constant T4x4 * temp_y = (constant T4x4 *)y;
-    constant char * temp_x = (constant char *)x;
+    constant W * temp_x = (constant W *)x;
 
     // scales index
     uint scale_index = r1 * BLOCK_SIZE_N + thread_col;
@@ -155,7 +153,7 @@ kernel void kernel_mul_mm(
         // read 8 values for input matrix
         *(threadgroup T2x4 *)(sb + (tiitg % THREAD_PER_COL) * 8 * 32 + 8 * (tiitg / THREAD_PER_COL)) = *((constant T2x4 *)y);
 
-        x += 2;
+        x += BLOCK_SIZE_K;
         y += BLOCK_SIZE_K;
 
         threadgroup_barrier(mem_flags::mem_threadgroup);
@@ -222,20 +220,20 @@ kernel void kernel_mul_mm(
 
 
 
-typedef decltype(kernel_mul_mm<float, float4x4, dequantize_f32>) mat_mm_f32_f32;
+typedef decltype(kernel_mul_mm<float, float, dequantize_f32>) mat_mm_f32_f32;
 
 template [[host_name("kernel_mul_mm_f32_f32")]]
-kernel mat_mm_f32_f32 kernel_mul_mm<float, float4x4, dequantize_f32>;
+kernel mat_mm_f32_f32 kernel_mul_mm<float, float, dequantize_f32>;
 
-typedef decltype(kernel_mul_mm<half, half4x4, dequantize_f16>) mat_mm_f16_f16;
+typedef decltype(kernel_mul_mm<half, half, dequantize_f16>) mat_mm_f16_f16;
 
 template [[host_name("kernel_mul_mm_f16_f16")]]
-kernel mat_mm_f16_f16 kernel_mul_mm<half, half4x4, dequantize_f16>;
+kernel mat_mm_f16_f16 kernel_mul_mm<half, half, dequantize_f16>;
 
-//typedef decltype(kernel_mul_mm<float, char, dequantize_i8>) mat_mm_f32_i8;
-//
-//template [[host_name("kernel_mul_mm_f32_i8")]]
-//kernel mat_mm_f32_i8 kernel_mul_mm<float, char, dequantize_i8>;
+typedef decltype(kernel_mul_mm<float, char, dequantize_i8>) mat_mm_f32_i8;
+
+template [[host_name("kernel_mul_mm_f32_i8")]]
+kernel mat_mm_f32_i8 kernel_mul_mm<float, char, dequantize_i8>;
 
 )METAL_QUANTIZED";
 
