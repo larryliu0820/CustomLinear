@@ -29,23 +29,21 @@ template <> struct BlockType<half> {
 
 
 template<typename T>
-void dequantize_f32(constant float * src, constant T * scales, uint index, thread half4x4 & reg) {
-//    float4x4 temp = *(((constant float4x4 *)src));
+void dequantize_f32(constant float * src, constant T * scales, uint index, thread float4x4 & reg) {
     for (int i = 0; i < 16; i++){
         reg[i/4][i%4] = src[i];
     }
 }
 
 template<typename T>
-void dequantize_f16(constant half * src, constant T * scales, uint index, thread half4x4 & reg) {
-//    float4x4 temp = *(((constant float4x4 *)src));
+void dequantize_f16(constant half * src, constant T * scales, uint index, thread float4x4 & reg) {
     for (int i = 0; i < 16; i++){
         reg[i/4][i%4] = src[i];
     }
 }
 
 template<typename T>
-void dequantize_i8(constant char * src, constant T * scales, uint index, thread half4x4 & reg) {
+void dequantize_i8(constant char * src, constant T * scales, uint index, thread float4x4 & reg) {
     T scale = scales[index];
     for (int i = 0; i < 16; i++){
         reg[i/4][i%4] = src[i] * scale;
@@ -63,7 +61,7 @@ void dequantize_i8(constant char * src, constant T * scales, uint index, thread 
 #define SG_MAT_ROW 8
 
 // T: input type, W: weight type
-template<typename T, typename W, void (*dequantize_func)(constant W *, constant T *, uint, thread half4x4 &)>
+template<typename T, typename W, void (*dequantize_func)(constant W *, constant T *, uint, thread float4x4 &)>
 kernel void kernel_mul_mm(
     constant T                 * A              [[buffer(0)]],  // 2 x 4096
     constant char              * B              [[buffer(1)]],  // 1024 x 4096
@@ -96,8 +94,9 @@ kernel void kernel_mul_mm(
     constant char * src0 = (constant char *)B;
     constant char * src1 = (constant char *)A;
 
-    threadgroup half * sa = (threadgroup half *)(shared_memory);
-    threadgroup T    * sb = (threadgroup T    *)(shared_memory + 4096);
+    // 8192 for sa, 4096 for sb
+    threadgroup float * sa = (threadgroup float *)(shared_memory);
+    threadgroup T     * sb = (threadgroup T     *)(shared_memory + 8192);
 
     const uint r0 = tgpig.y;
     const uint r1 = tgpig.x;
@@ -110,7 +109,7 @@ kernel void kernel_mul_mm(
     short thread_row = ((short)tiitg/THREAD_PER_ROW) < n_rows ? ((short)tiitg/THREAD_PER_ROW) : n_rows - 1;
     short thread_col = ((short)tiitg/THREAD_PER_COL) < n_cols ? ((short)tiitg/THREAD_PER_COL) : n_cols - 1;
 
-    simdgroup_half8x8  ma[4]; // dequantized weight
+    simdgroup_float8x8  ma[4]; // dequantized weight
     Tsimd8x8 mb[2]; // input
     Tsimd8x8 c_res[8]; // outer product result
     for (int i = 0; i < 8; i++){
@@ -132,7 +131,7 @@ kernel void kernel_mul_mm(
 
     for (int loop_k = 0; loop_k < ne00; loop_k += BLOCK_SIZE_K) {
         // load data and store to threadgroup memory
-        half4x4 temp_a;
+        float4x4 temp_a;
         dequantize_func(x, scales, scale_index, temp_a);
         threadgroup_barrier(mem_flags::mem_threadgroup);
 
@@ -147,7 +146,7 @@ kernel void kernel_mul_mm(
             int col_offset = (tiitg / THREAD_PER_ROW) % 8;
             // now calculates the overall offset for sa
             int sa_offset = (sg_mat_grid_row_index * 8 + sg_mat_grid_col_index) * 64 + (row_offset * 8 + col_offset);
-            half temp_a_val = temp_a[i/4][i%4];
+            float temp_a_val = temp_a[i/4][i%4];
             *(sa + sa_offset) = temp_a[i/4][i%4];
         }
         // read 8 values for input matrix
@@ -159,11 +158,11 @@ kernel void kernel_mul_mm(
         threadgroup_barrier(mem_flags::mem_threadgroup);
 
         // load matrices from threadgroup memory and conduct outer products
-        threadgroup half * lsma = (sa + THREAD_MAT_M * SG_MAT_SIZE * (sgitg % 2));
-        threadgroup T    * lsmb = (sb + THREAD_MAT_N * SG_MAT_SIZE * (sgitg / 2));
+        threadgroup float * lsma = (sa + THREAD_MAT_M * SG_MAT_SIZE * (sgitg % 2));
+        threadgroup T     * lsmb = (sb + THREAD_MAT_N * SG_MAT_SIZE * (sgitg / 2));
         // DEBUG:
-        threadgroup half4x4 * temp_lsma = (threadgroup half4x4 *)lsma;
-        threadgroup T4x4 * temp_lsmb = (threadgroup T4x4 *)lsmb;
+        threadgroup float4x4 * temp_lsma = (threadgroup float4x4 *)lsma;
+        threadgroup T4x4     * temp_lsmb = (threadgroup T4x4     *)lsmb;
         #pragma unroll(4)
         for (int ik = 0; ik < BLOCK_SIZE_K / 8; ik++) {
             #pragma unroll(4)

@@ -13,7 +13,7 @@ os.environ["PYTORCH_ENABLE_MPS_FALLBACK"] = "1"
 
 import torch.utils.cpp_extension
 
-fp32_compiled_lib = torch.utils.cpp_extension.load(
+fp_compiled_lib = torch.utils.cpp_extension.load(
     name='LlamaCppFloatLinear',
     sources=['LlamaCppFloatLinear.mm'],
     extra_include_paths=[os.path.dirname(__file__)],
@@ -34,7 +34,7 @@ if __name__ == "__main__":
     weight = torch.randn(1024, 4096, device=mps_device, dtype=torch.float32)
     input = torch.randn(2, 4096, device=mps_device, dtype=torch.float32)
     print("Running compiled kernel")
-    res1 = fp32_compiled_lib.llama_cpp_mm_f32(input, weight)
+    res1 = fp_compiled_lib.llama_cpp_mm_f32(input, weight)
     res2 = torch.mm(input, weight.transpose(1, 0).contiguous())
 
     print("FP32 MPS result: ")

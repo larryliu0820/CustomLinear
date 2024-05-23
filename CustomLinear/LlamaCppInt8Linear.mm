@@ -73,7 +73,7 @@ Tensor _llama_cpp_mm_int8(const Tensor& A, const Tensor& B, const Tensor& scales
       mtl_setBuffer(computeEncoder, scales, 2);
       mtl_setBuffer(computeEncoder, C, 3);
       [computeEncoder setBytes:sizes.data() length:16 atIndex:4];
-        [computeEncoder setThreadgroupMemoryLength:8192 atIndex:0];
+        [computeEncoder setThreadgroupMemoryLength:12288 atIndex:0];
         [computeEncoder dispatchThreadgroups:MTLSizeMake( (M + 31)/32, (N + 63)/64, 1) threadsPerThreadgroup:MTLSizeMake(128, 1, 1)];
         mpsStream->synchronize(SyncType::COMMIT_AND_WAIT);
         
