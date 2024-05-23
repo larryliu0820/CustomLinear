@@ -36,4 +36,4 @@ if __name__ == "__main__":
     print("Metal kernel result: ")
     print(res1)
 
-    print(f"Allclose? {torch.allclose(res1, res2, atol=0.1)}")
+    print(f"Allclose? {torch.allclose(res1, res2, atol=0.05)}")

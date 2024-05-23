@@ -49,7 +49,7 @@ template<typename T>
 void dequantize_i8(constant char * src, constant T * scales, uint index, thread half4x4 & reg) {
     T scale = scales[index];
     for (int i = 0; i < 16; i++){
-        reg[i/4][i%4] = src[i/4][i%4] * scale;
+        reg[i/4][i%4] = src[i] * scale;
     }
 }
 */
