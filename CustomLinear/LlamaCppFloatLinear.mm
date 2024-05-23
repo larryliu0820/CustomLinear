@@ -25,7 +25,7 @@ namespace at::native {
 
 using namespace mps;
 
-Tensor _llama_cpp_mm_mps(const Tensor& A, const Tensor& B) {
+Tensor _llama_cpp_mm_f32(const Tensor& A, const Tensor& B) {
   auto M = A.size(0);
   auto N = B.size(0);
   auto K = A.size(1);
@@ -93,5 +93,5 @@ Tensor _llama_cpp_mm_mps(const Tensor& A, const Tensor& B) {
 
 // Create Python bindings for the Objective-C++ code.
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
-    m.def("llama_cpp_mm", &at::native::_llama_cpp_mm_mps);
+    m.def("llama_cpp_mm_f32", &at::native::_llama_cpp_mm_f32);
 }

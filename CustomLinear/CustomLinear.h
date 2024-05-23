@@ -128,7 +128,7 @@ kernel void kernel_mul_mm(
     constant W * temp_x = (constant W *)x;
 
     // scales index
-    uint scale_index = r1 * BLOCK_SIZE_N + thread_col;
+    uint scale_index = r0 * BLOCK_SIZE_M + thread_row;
 
     for (int loop_k = 0; loop_k < ne00; loop_k += BLOCK_SIZE_K) {
         // load data and store to threadgroup memory
