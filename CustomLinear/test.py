@@ -31,31 +31,33 @@ int8_compiled_lib = torch.utils.cpp_extension.load(
 
 if __name__ == "__main__":
     mps_device = torch.device("mps")  # Device object representing GPU.
-    weight = torch.randn(1024, 4096, device=mps_device, dtype=torch.float32)
-    input = torch.randn(2, 4096, device=mps_device, dtype=torch.float32)
+    weight = torch.randn(1024, 4096, device=mps_device, dtype=torch.half)
+    input = torch.randn(2, 4096, device=mps_device, dtype=torch.half)
     print("Running compiled kernel")
     res1 = fp_compiled_lib.llama_cpp_mm_f32(input, weight)
     res2 = torch.mm(input, weight.transpose(1, 0).contiguous())
 
-    print("FP32 MPS result: ")
+    print(f"Input {input.dtype} Weight {weight.dtype} MPS result: ")
     print(res2)
 
-    print("FP32 Metal kernel result: ")
+    print(f"Input {input.dtype} Weight {weight.dtype} Metal kernel result: ")
     print(res1)
 
-    print(f"Allclose? {torch.allclose(res1, res2, atol=0.1)}")
+    print(f"Allclose? {torch.allclose(res1, res2, atol=1e-2, rtol=1e-3)}")
+    print(f"atol: {torch.max(torch.abs(res1-res2))}")
 
     qweight = torch.randn(1024, 4096, device=mps_device, dtype=torch.int8)
-    scale = torch.randn(1024, device=mps_device, dtype=torch.float32)
+    scale = torch.randn(1024, device=mps_device, dtype=torch.half)
     res1 = int8_compiled_lib.llama_cpp_mm_i8(input, qweight, scale)
     res2 = torch._weight_int8pack_mm(input, qweight, scale)
 
     print("Scale: ")
     print(scale)
-    print("Int8 MPS result: ")
+    print(f"Input {input.dtype} Weight {qweight.dtype} MPS result: ")
     print(res2)
 
-    print("Int8 Metal kernel result: ")
+    print(f"Input {input.dtype} Weight {qweight.dtype}  Metal kernel result: ")
     print(res1)
 
-    print(f"Allclose? {torch.allclose(res1, res2, atol=0.1)}")
+    print(f"Allclose? {torch.allclose(res1, res2, atol=1e-2, rtol=1e-3)}")
+    print(f"atol: {torch.max(torch.abs(res1-res2))}")

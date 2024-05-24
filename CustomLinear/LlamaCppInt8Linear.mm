@@ -58,7 +58,7 @@ Tensor _llama_cpp_mm_int8(const Tensor& A, const Tensor& B, const Tensor& scales
                                                                   options:nil
                                                                     error:&error];
       TORCH_CHECK(customKernelLibrary, "Error creating custom kernel library: ", error.localizedDescription.UTF8String);
-      const std::string kernel = "kernel_mul_mm_f32_i8";
+      const std::string kernel = "kernel_mul_mm_" + scalarToMetalTypeString(A.scalar_type()) + "_char";
 
       // Create a function
       id<MTLFunction> customQuantizedLinearFunction = [customKernelLibrary newFunctionWithName:[NSString stringWithUTF8String:kernel.c_str()]];

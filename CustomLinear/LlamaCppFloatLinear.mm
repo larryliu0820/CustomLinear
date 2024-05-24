@@ -30,14 +30,15 @@ Tensor _llama_cpp_mm_f32(const Tensor& A, const Tensor& B) {
   auto N = B.size(0);
   auto K = A.size(1);
 
-//   TORCH_CHECK(A.dtype() == kFloat,
-//               __func__,
-//               " : expect A to be either 32-bit float tensor.");
+  TORCH_CHECK(A.dtype() == kFloat || A.dtype() == kBFloat16 || A.dtype() == kHalf,
+              __func__,
+              " : expect A to be either 32-bit or 16-bit float tensor.");
   TORCH_CHECK(A.is_contiguous(), __func__, " : expect A to be contiguous.");
   TORCH_CHECK(A.dim() == 2, __func__, " : expect A to be 2D tensor.");
 
-   TORCH_CHECK(B.dtype() == kFloat, __func__, " : expect B to be float tensor.");
-  TORCH_CHECK(B.is_contiguous(), __func__, " : expect B to be contiguous.");
+  TORCH_CHECK(B.dtype() == kFloat || B.dtype() == kBFloat16 || B.dtype() == kHalf,
+              __func__,
+              " : expect B to be either 32-bit or 16-bit float tensor.");  TORCH_CHECK(B.is_contiguous(), __func__, " : expect B to be contiguous.");
   TORCH_CHECK(B.size(1) == K, __func__, " : expect B.size(1) == ", K);
 
   auto C = at::empty({M, N}, A.options());
@@ -59,7 +60,8 @@ Tensor _llama_cpp_mm_f32(const Tensor& A, const Tensor& B) {
                                                                   options:nil
                                                                     error:&error];
       TORCH_CHECK(customKernelLibrary, "Error creating custom kernel library: ", error.localizedDescription.UTF8String);
-      const std::string kernel = "kernel_mul_mm_f32_f32";
+
+      const std::string kernel = "kernel_mul_mm_" + scalarToMetalTypeString(A.scalar_type()) + "_" + scalarToMetalTypeString(A.scalar_type());
 
       // Create a function
       id<MTLFunction> customQuantizedLinearFunction = [customKernelLibrary newFunctionWithName:[NSString stringWithUTF8String:kernel.c_str()]];
