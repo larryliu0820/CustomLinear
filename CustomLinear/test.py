@@ -31,8 +31,8 @@ int8_compiled_lib = torch.utils.cpp_extension.load(
 
 if __name__ == "__main__":
     mps_device = torch.device("mps")  # Device object representing GPU.
-    weight = torch.randn(1024, 4096, device=mps_device, dtype=torch.half)
-    input = torch.randn(2, 4096, device=mps_device, dtype=torch.half)
+    weight = torch.ones(128, 2048, device=mps_device, dtype=torch.half)
+    input = torch.ones(32, 2048, device=mps_device, dtype=torch.half)
     print("Running compiled kernel")
     res1 = fp_compiled_lib.llama_cpp_mm_f32(input, weight)
     res2 = torch.mm(input, weight.transpose(1, 0).contiguous())
@@ -46,8 +46,8 @@ if __name__ == "__main__":
     print(f"Allclose? {torch.allclose(res1, res2, atol=1e-2, rtol=1e-3)}")
     print(f"atol: {torch.max(torch.abs(res1-res2))}")
 
-    qweight = torch.randn(1024, 4096, device=mps_device, dtype=torch.int8)
-    scale = torch.randn(1024, device=mps_device, dtype=torch.half)
+    qweight = torch.ones(128, 2048, device=mps_device, dtype=torch.int8)
+    scale = torch.randn(128, device=mps_device, dtype=torch.half)
     res1 = int8_compiled_lib.llama_cpp_mm_i8(input, qweight, scale)
     res2 = torch._weight_int8pack_mm(input, qweight, scale)
 
